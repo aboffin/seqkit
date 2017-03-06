@@ -24,7 +24,7 @@ import (
 	"fmt"
 	"io"
 	"runtime"
-
+	"sort"
 	"github.com/dustin/go-humanize"
 	"github.com/shenwei356/bio/seq"
 	"github.com/shenwei356/bio/seqio/fastx"
@@ -57,7 +57,9 @@ var statCmd = &cobra.Command{
 		defer outfh.Close()
 
 		var fastxReader *fastx.Reader
-		var num, l, lenMin, lenMax, lenSum uint64
+		var num, l, lenMin, lenMax, lenSum, lenN50 uint64
+		var seqlens []uint64
+		var a ctglen
 		var seqFormat, t string
 		statInfos := []statInfo{}
 		for _, file := range files {
@@ -65,7 +67,7 @@ var statCmd = &cobra.Command{
 			checkError(err)
 
 			seqFormat = ""
-			num, lenMin, lenMax, lenSum = 0, ^uint64(0), 0, 0
+			num, lenMin, lenMax, lenSum, lenN50 = 0, ^uint64(0), 0, 0, 0
 			for {
 				record, err := fastxReader.Read()
 				if err != nil {
@@ -75,7 +77,6 @@ var statCmd = &cobra.Command{
 					checkError(err)
 					break
 				}
-
 				num++
 				if seqFormat == "" {
 					if len(record.Seq.Qual) > 0 {
@@ -92,6 +93,23 @@ var statCmd = &cobra.Command{
 				if l > lenMax {
 					lenMax = l
 				}
+				seqlens=append(seqlens, l)
+				a = seqlens
+				sort.Sort(sort.Reverse(a))
+			}
+			csum := make(ctglen, len(a))
+			csum[0] = a[0]	
+			i := 1
+			for i < len(a) {
+				csum[i] = a[i] + csum[i-1]
+				i++
+			}
+			for i, clen := range(csum) {
+				fmt.Println("len: ", a[i], ", clen: ", clen, ", lenSum/2: ", lenSum/2)
+				if clen>= (lenSum/2) {
+					lenN50 = a[i]
+					break
+				}
 			}
 			if fastxReader.Alphabet() == seq.DNAredundant {
 				t = "DNA"
@@ -104,12 +122,13 @@ var statCmd = &cobra.Command{
 			if num == 0 {
 				statInfos = append(statInfos, statInfo{file, seqFormat, t,
 					int64(num), int64(lenSum), int64(lenMin),
-					0, int64(lenMax)})
+					0, int64(lenMax), int64(lenN50)})
 
 			} else {
 				statInfos = append(statInfos, statInfo{file, seqFormat, t,
 					int64(num), int64(lenSum), int64(lenMin),
-					math.Round(float64(lenSum)/float64(num), 1), int64(lenMax)})
+					math.Round(float64(lenSum)/float64(num), 1), 
+					int64(lenMax), int64(lenN50)})
 			}
 		}
 
@@ -122,7 +141,8 @@ var statCmd = &cobra.Command{
 			{Header: "sum_len", AlignRight: true},
 			{Header: "min_len", AlignRight: true},
 			{Header: "avg_len", AlignRight: true},
-			{Header: "max_len", AlignRight: true}}...)
+			{Header: "max_len", AlignRight: true},
+			{Header: "n50_len", AlignRight: true}}...)
 		checkError(err)
 		tbl.Separator = "  "
 
@@ -135,7 +155,8 @@ var statCmd = &cobra.Command{
 				humanize.Comma(info.lenSum),
 				humanize.Comma(info.lenMin),
 				humanize.Commaf(info.lenAvg),
-				humanize.Comma(info.lenMax))
+				humanize.Comma(info.lenMax),
+				humanize.Comma(info.lenN50))
 		}
 		outfh.Write(tbl.Bytes())
 	},
@@ -150,7 +171,13 @@ type statInfo struct {
 	lenMin int64
 	lenAvg float64
 	lenMax int64
+	lenN50 int64
 }
+// define sort.interface
+type ctglen []uint64
+func (a ctglen) Len() int           { return len(a) }
+func (a ctglen) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func (a ctglen) Less(i, j int) bool { return a[i] < a[j] }
 
 func init() {
 	RootCmd.AddCommand(statCmd)

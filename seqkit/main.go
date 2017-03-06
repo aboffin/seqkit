@@ -25,7 +25,7 @@ import (
 	// "runtime/pprof"
 
 	"github.com/op/go-logging"
-	"github.com/shenwei356/seqkit/seqkit/cmd"
+	"github.com/aboffin/seqkit/seqkit/cmd"
 )
 
 var logFormat = logging.MustStringFormatter(
